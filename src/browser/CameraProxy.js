@@ -32,17 +32,47 @@ function takePicture (success, error, opts) {
         input.type = 'file';
         input.name = 'files[]';
 
+        // Check if allowSelectMultiple is enabled (opts[12] is the allowSelectMultiple flag)
+        const allowSelectMultiple = opts && opts.length > 12 && opts[12];
+        if (allowSelectMultiple) {
+            input.setAttribute('multiple', 'multiple');
+        }
+
         input.onchange = function (inputEvent) {
-            const reader = new FileReader(); /* eslint no-undef : 0 */
-            reader.onload = function (readerEvent) {
-                input.parentNode.removeChild(input);
+            const files = inputEvent.target.files;
 
-                const imageData = readerEvent.target.result;
+            // Handle multiple file selection
+            if (allowSelectMultiple && files.length > 1) {
+                const imageArray = [];
+                let completed = 0;
 
-                return success(imageData);
-            };
+                for (let i = 0; i < files.length; i++) {
+                    const reader = new FileReader();
+                    reader.onload = function (readerEvent) {
+                        imageArray.push(readerEvent.target.result);
+                        completed++;
 
-            reader.readAsDataURL(inputEvent.target.files[0]);
+                        // When all files are processed, return the array
+                        if (completed === files.length) {
+                            input.parentNode.removeChild(input);
+                            return success(imageArray);
+                        }
+                    };
+                    reader.readAsDataURL(files[i]);
+                }
+            } else {
+                // Handle single file selection (existing behavior)
+                const reader = new FileReader(); /* eslint no-undef : 0 */
+                reader.onload = function (readerEvent) {
+                    input.parentNode.removeChild(input);
+
+                    const imageData = readerEvent.target.result;
+
+                    return success(imageData);
+                };
+
+                reader.readAsDataURL(inputEvent.target.files[0]);
+            }
         };
 
         document.body.appendChild(input);

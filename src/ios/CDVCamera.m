@@ -85,6 +85,7 @@ static NSString* MIME_JPEG    = @"image/jpeg";
     pictureOptions.saveToPhotoAlbum = [[command argumentAtIndex:9 withDefault:@(NO)] boolValue];
     pictureOptions.popoverOptions = [command argumentAtIndex:10 withDefault:nil];
     pictureOptions.cameraDirection = [[command argumentAtIndex:11 withDefault:@(UIImagePickerControllerCameraDeviceRear)] unsignedIntegerValue];
+    pictureOptions.allowSelectMultiple = [[command argumentAtIndex:12 withDefault:@(NO)] boolValue];
 
     pictureOptions.popoverSupported = NO;
     pictureOptions.usesGeolocation = NO;
@@ -208,9 +209,21 @@ static NSString* MIME_JPEG    = @"image/jpeg";
     }];
 }
 
-- (void)showCameraPicker:(NSString*)callbackId withOptions:(CDVPictureOptions *) pictureOptions
+- (void)showCameraPicker:(NSString*)callbackId withOptions:(CDVPictureOptions*)pictureOptions
 {
-    // Perform UI operations on the main thread
+    // Use PHPickerViewController for photo library on iOS 14+
+    if (@available(iOS 14, *)) {
+        // sourceType is PHOTOLIBRARY
+        if (pictureOptions.sourceType == UIImagePickerControllerSourceTypePhotoLibrary ||
+            // sourceType is SAVEDPHOTOALBUM (same as PHOTOLIBRARY)
+            pictureOptions.sourceType == UIImagePickerControllerSourceTypeSavedPhotosAlbum) {
+            [self showPHPicker:callbackId withOptions:pictureOptions];
+            return;
+        }
+    }
+
+    // Use UIImagePickerController for camera or as image picker for iOS older than 14
+    // UIImagePickerController must be created and presented on the main thread.
     dispatch_async(dispatch_get_main_queue(), ^{
         CDVCameraPicker* cameraPicker = [CDVCameraPicker createFromPictureOptions:pictureOptions];
         self.pickerController = cameraPicker;
@@ -251,6 +264,350 @@ static NSString* MIME_JPEG    = @"image/jpeg";
     self.hasPendingOperation = NO;
     self.pickerController = nil;
 }
+
+// Since iOS 14, we can use PHPickerViewController to select images from the photo library
+#if __IPHONE_OS_VERSION_MAX_ALLOWED >= 140000 // Always true on XCode12+
+- (void)showPHPicker:(NSString*)callbackId withOptions:(CDVPictureOptions*)pictureOptions API_AVAILABLE(ios(14))
+{
+    // PHPicker must be created and presented on the main thread.
+    dispatch_async(dispatch_get_main_queue(), ^{
+        // Using [PHPickerConfiguration init] instead of
+        // [PHPickerConfiguration initWithPhotoLibrary:[PHPhotoLibrary sharedPhotoLibrary]]
+        // is more open and lets the picker return items that aren't PHAssets, like cloud/shared providers,
+        // but will not return asset identifiers.
+        PHPickerConfiguration *config = [[PHPickerConfiguration alloc] init];
+
+        // Configure filter based on media type
+        // Images
+        if (pictureOptions.mediaType == MediaTypePicture) {
+            config.filter = [PHPickerFilter imagesFilter];
+
+            // Videos
+        } else if (pictureOptions.mediaType == MediaTypeVideo) {
+            config.filter = [PHPickerFilter videosFilter];
+
+            // Images and videos
+        } else if (pictureOptions.mediaType == MediaTypeAll) {
+            config.filter = [PHPickerFilter anyFilterMatchingSubfilters:@[
+                [PHPickerFilter imagesFilter],
+                [PHPickerFilter videosFilter]
+            ]];
+        }
+
+        if (pictureOptions.allowSelectMultiple) {
+            config.selectionLimit = 0; // 0 means unlimited selection
+        } else {
+            config.selectionLimit = 1;
+        }
+
+        // PHPickerConfigurationAssetRepresentationModeCurrent:
+        // A mode that uses the current representation to avoid transcoding, if possible.
+        // This means PHPicker tries to give you a representation already available without
+        // re-encoding. That usually is the stored file on device (e.g., HEIC/JPEG),
+        // but if the asset is only in iCloud or already has a cached "current" rendition,
+        // you might get that cached representation instead of downloading the original.
+        // This plugin supports only JPEG and PNG currently and will convert the
+        // image later in processImage: to the requested format.
+        config.preferredAssetRepresentationMode = PHPickerConfigurationAssetRepresentationModeCurrent;
+
+        PHPickerViewController *picker = [[PHPickerViewController alloc] initWithConfiguration:config];
+        picker.delegate = self;
+
+        // Store callback ID and options in picker with objc_setAssociatedObject
+        // PHPickerViewController's delegate method picker:didFinishPicking: only gives you back the picker instance
+        // and the results array. It doesn't carry arbitrary context. By associating the callbackId and pictureOptions
+        // with the picker, you can retrieve them later inside the delegate method
+        objc_setAssociatedObject(picker, "callbackId", callbackId, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        objc_setAssociatedObject(picker, "pictureOptions", pictureOptions, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+
+        [self.viewController presentViewController:picker animated:YES completion:^{
+            self.hasPendingOperation = NO;
+        }];
+    });
+}
+
+// PHPickerViewControllerDelegate method
+- (void)picker:(PHPickerViewController*)picker didFinishPicking:(NSArray<PHPickerResult*>*)results API_AVAILABLE(ios(14))
+{
+    NSString *callbackId = objc_getAssociatedObject(picker, "callbackId");
+    CDVPictureOptions *pictureOptions = objc_getAssociatedObject(picker, "pictureOptions");
+
+    __weak CDVCamera* weakSelf = self;
+
+    [picker dismissViewControllerAnimated:YES completion:^{
+        if (results.count == 0) {
+            // User cancelled
+            CDVPluginResult* result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR messageAsString:@"No Image Selected"];
+            [weakSelf.commandDelegate sendPluginResult:result callbackId:callbackId];
+            weakSelf.hasPendingOperation = NO;
+            return;
+        }
+
+        // Handle multiple image selection
+        if (pictureOptions.allowSelectMultiple) {
+            [weakSelf processMultiplePHPickerImages:results
+                                       callbackId:callbackId
+                                          options:pictureOptions];
+        } else {
+            // Handle single image selection (existing behavior)
+            PHPickerResult *pickerResult = results.firstObject;
+
+            // Check if it's a video
+            if ([pickerResult.itemProvider hasItemConformingToTypeIdentifier:UTTypeMovie.identifier]) {
+                // loadFileRepresentationForTypeIdentifier returns an url which will be gone after the completion handler returns,
+                // so we need to copy the video to a temporary location, which can be accessed later
+                [pickerResult.itemProvider loadFileRepresentationForTypeIdentifier:UTTypeMovie.identifier
+                                                                 completionHandler:^(NSURL * _Nullable url, NSError * _Nullable error) {
+                    if (error) {
+                        NSLog(@"CDVCamera: Failed to load video: %@", [error localizedDescription]);
+                        CDVPluginResult* result = [CDVPluginResult resultWithStatus:CDVCommandStatus_IO_EXCEPTION
+                                                                    messageAsString:[NSString stringWithFormat:@"Failed to load video: %@", [error localizedDescription]]];
+                        [weakSelf.commandDelegate sendPluginResult:result callbackId:callbackId];
+                        weakSelf.hasPendingOperation = NO;
+                        return;
+                    }
+
+                    // Copy video to a temporary location, so it can be accessed after this completion handler returns
+                    NSString* tempVideoPath = [weakSelf copyFileToTemp:[url path]];
+
+                    // Send Cordova plugin result back
+                    CDVPluginResult* result = nil;
+
+                    if (tempVideoPath == nil) {
+                        result = [CDVPluginResult resultWithStatus:CDVCommandStatus_IO_EXCEPTION
+                                                    messageAsString:@"Failed to copy video file to temporary location"];
+                    } else {
+                        result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsString:tempVideoPath];
+                    }
+
+                    [weakSelf.commandDelegate sendPluginResult:result callbackId:callbackId];
+                    weakSelf.hasPendingOperation = NO;
+                }];
+
+                // Handle image
+            } else if ([pickerResult.itemProvider hasItemConformingToTypeIdentifier:UTTypeImage.identifier]) {
+                // Load image data for the NSItemProvider
+                [pickerResult.itemProvider loadDataRepresentationForTypeIdentifier:UTTypeImage.identifier
+                                                                 completionHandler:^(NSData * _Nullable imageData, NSError * _Nullable error) {
+                    if (error) {
+                        CDVPluginResult* result = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR
+                                                                    messageAsString:[error localizedDescription]];
+                        [weakSelf.commandDelegate sendPluginResult:result callbackId:callbackId];
+                        weakSelf.hasPendingOperation = NO;
+                        return;
+                    }
+
+                    [weakSelf processPHPickerImage:[UIImage imageWithData:imageData]
+                                          metadata:[weakSelf convertImageMetadata:imageData]
+                                        callbackId:callbackId
+                                           options:pictureOptions];
+                }];
+            }
+        }
+    }];
+}
+
+/**
+    Prepares the image and metadata obtained from PHPickerImageViewController which will be processed in
+    resultForImage:. After that CDVPluginResult is returned.
+*/
+- (void)processPHPickerImage:(UIImage*)image
+                     metadata:(NSDictionary*)metadata
+                   callbackId:(NSString*)callbackId
+                      options:(CDVPictureOptions*)options API_AVAILABLE(ios(14))
+{
+    // To shrink the file size, only selected meta data like EXIF, TIFF, and GPS is used,
+    // which will be stored in self.metadata, which is set to the image in resultForImage:
+    // This code replicates the logic from processImage: for the UIImagePickerController
+    if (metadata.count > 0) {
+        self.metadata = [NSMutableDictionary dictionary];
+
+        NSDictionary *exif = metadata[(NSString *)kCGImagePropertyExifDictionary];
+        if (exif.count > 0) {
+            self.metadata[(NSString *)kCGImagePropertyExifDictionary] = [exif mutableCopy];
+        }
+
+        NSDictionary *tiff = metadata[(NSString *)kCGImagePropertyTIFFDictionary];
+        if (tiff.count > 0) {
+            self.metadata[(NSString *)kCGImagePropertyTIFFDictionary] = [tiff mutableCopy];
+        }
+
+        NSDictionary *gps = metadata[(NSString *)kCGImagePropertyGPSDictionary];
+        if (gps.count > 0) {
+            self.metadata[(NSString *)kCGImagePropertyGPSDictionary] = [gps mutableCopy];
+        }
+    }
+
+    // Mimic the info dictionary which would be created by UIImagePickerController
+    // Add image, which will be used in retrieveImage: to get the image and do processing
+    NSMutableDictionary *info = [@{UIImagePickerControllerOriginalImage : image} mutableCopy];
+
+    // Add metadata if available
+    if (metadata.count > 0) {
+        // This is not used anywhere and can be removed
+        info[UIImagePickerControllerMediaMetadata] = metadata;
+    }
+
+    // Return Cordova result to WebView
+    // Needed weakSelf for completion block
+    __weak CDVCamera* weakSelf = self;
+
+    // Process and return result
+    [self resultForImage:options info:info completion:^(CDVPluginResult* pluginResult) {
+        [weakSelf.commandDelegate sendPluginResult:pluginResult callbackId:callbackId];
+        weakSelf.hasPendingOperation = NO;
+        weakSelf.pickerController = nil;
+    }];
+}
+
+/**
+    Prepares multiple images and metadata obtained from PHPickerViewController and returns them as an array.
+*/
+- (void)processMultiplePHPickerImages:(NSArray<PHPickerResult*>*)results
+                           callbackId:(NSString*)callbackId
+                              options:(CDVPictureOptions*)options API_AVAILABLE(ios(14))
+{
+    __weak CDVCamera* weakSelf = self;
+
+    // Create a mutable array to store the results
+    NSMutableArray* resultsArray = [NSMutableArray arrayWithCapacity:results.count];
+
+    // Process each result
+    [self processNextImage:results
+                   atIndex:0
+             resultsArray:resultsArray
+                callbackId:callbackId
+                   options:options];
+}
+
+- (void)processNextImage:(NSArray<PHPickerResult*>*)results
+                 atIndex:(NSUInteger)index
+            resultsArray:(NSMutableArray*)resultsArray
+              callbackId:(NSString*)callbackId
+                 options:(CDVPictureOptions*)options API_AVAILABLE(ios(14))
+{
+    // Base case: if we've processed all images, return the results
+    if (index >= results.count) {
+        CDVPluginResult* result = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK messageAsArray:resultsArray];
+        [self.commandDelegate sendPluginResult:result callbackId:callbackId];
+        self.hasPendingOperation = NO;
+        self.pickerController = nil;
+        return;
+    }
+
+    PHPickerResult *pickerResult = results[index];
+    __weak CDVCamera* weakSelf = self;
+
+    // Check if it's a video
+    if ([pickerResult.itemProvider hasItemConformingToTypeIdentifier:UTTypeMovie.identifier]) {
+        [pickerResult.itemProvider loadFileRepresentationForTypeIdentifier:UTTypeMovie.identifier
+                                                         completionHandler:^(NSURL * _Nullable url, NSError * _Nullable error) {
+            if (error) {
+                NSLog(@"CDVCamera: Failed to load video: %@", [error localizedDescription]);
+                // Skip this video and continue with next
+                [weakSelf processNextImage:results
+                                   atIndex:index + 1
+                              resultsArray:resultsArray
+                                 callbackId:callbackId
+                                    options:options];
+                return;
+            }
+
+            NSString* tempVideoPath = [weakSelf copyFileToTemp:[url path]];
+
+            if (tempVideoPath != nil) {
+                [resultsArray addObject:tempVideoPath];
+            }
+
+            // Continue with next image
+            [weakSelf processNextImage:results
+                               atIndex:index + 1
+                          resultsArray:resultsArray
+                            callbackId:callbackId
+                               options:options];
+        }];
+
+    // Handle image
+    } else if ([pickerResult.itemProvider hasItemConformingToTypeIdentifier:UTTypeImage.identifier]) {
+        [pickerResult.itemProvider loadDataRepresentationForTypeIdentifier:UTTypeImage.identifier
+                                                         completionHandler:^(NSData * _Nullable imageData, NSError * _Nullable error) {
+            if (error) {
+                NSLog(@"CDVCamera: Failed to load image: %@", [error localizedDescription]);
+                // Skip this image and continue with next
+                [weakSelf processNextImage:results
+                                   atIndex:index + 1
+                              resultsArray:resultsArray
+                                 callbackId:callbackId
+                                    options:options];
+                return;
+            }
+
+            UIImage* image = [UIImage imageWithData:imageData];
+            NSDictionary* metadata = [weakSelf convertImageMetadata:imageData];
+
+            // Process the image
+            [weakSelf processPHPickerImageForArray:image
+                                          metadata:metadata
+                                      resultsArray:resultsArray
+                                          callbackId:callbackId
+                                             options:options
+                                             results:results
+                                             atIndex:index];
+        }];
+    }
+}
+
+- (void)processPHPickerImageForArray:(UIImage*)image
+                            metadata:(NSDictionary*)metadata
+                        resultsArray:(NSMutableArray*)resultsArray
+                          callbackId:(NSString*)callbackId
+                             options:(CDVPictureOptions*)options
+                             results:(NSArray<PHPickerResult*>*)results
+                             atIndex:(NSUInteger)index API_AVAILABLE(ios(14))
+{
+    // To shrink the file size, only selected meta data like EXIF, TIFF, and GPS is used
+    if (metadata.count > 0) {
+        self.metadata = [NSMutableDictionary dictionary];
+
+        NSDictionary *exif = metadata[(NSString *)kCGImagePropertyExifDictionary];
+        if (exif.count > 0) {
+            self.metadata[(NSString *)kCGImagePropertyExifDictionary] = [exif mutableCopy];
+        }
+
+        NSDictionary *tiff = metadata[(NSString *)kCGImagePropertyTIFFDictionary];
+        if (tiff.count > 0) {
+            self.metadata[(NSString *)kCGImagePropertyTIFFDictionary] = [tiff mutableCopy];
+        }
+
+        NSDictionary *gps = metadata[(NSString *)kCGImagePropertyGPSDictionary];
+        if (gps.count > 0) {
+            self.metadata[(NSString *)kCGImagePropertyGPSDictionary] = [gps mutableCopy];
+        }
+    }
+
+    // Mimic the info dictionary which would be created by UIImagePickerController
+    NSMutableDictionary *info = [@{UIImagePickerControllerOriginalImage : image} mutableCopy];
+
+    if (metadata.count > 0) {
+        info[UIImagePickerControllerMediaMetadata] = metadata;
+    }
+
+    __weak CDVCamera* weakSelf = self;
+
+    [self resultForImage:options info:info completion:^(CDVPluginResult* pluginResult) {
+        if (pluginResult.status == CDVCommandStatus_OK) {
+            [resultsArray addObject:pluginResult.message];
+        }
+
+        // Continue with next image
+        [weakSelf processNextImage:results
+                           atIndex:index + 1
+                      resultsArray:resultsArray
+                        callbackId:callbackId
+                           options:options];
+    }];
+}
+#endif
 
 - (void)repositionPopover:(CDVInvokedUrlCommand*)command
 {
