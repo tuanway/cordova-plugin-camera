@@ -54,6 +54,7 @@ import org.apache.cordova.PermissionHelper;
 import org.apache.cordova.PluginResult;
 import org.json.JSONArray;
 import org.json.JSONException;
+import org.json.JSONObject;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
@@ -127,6 +128,8 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
     private boolean orientationCorrected;   // Has the picture's orientation been corrected
     private boolean allowEdit;              // Should we allow the user to crop the image.
     private boolean allowSelectMultiple;    // Should we allow the user to select multiple images.
+    private JSONObject popoverOptions;      // iOS-only popover options
+    private int cameraDirection;            // Camera direction (front/back)
 
     public CallbackContext callbackContext;
 
