@@ -173,7 +173,9 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             this.allowEdit = args.getBoolean(7);
             this.correctOrientation = args.getBoolean(8);
             this.saveToPhotoAlbum = args.getBoolean(9);
-            this.allowSelectMultiple = args.length() > 10 ? args.getBoolean(10) : false;
+            this.popoverOptions = args.optJSONObject(10);
+            this.cameraDirection = args.optInt(11, Camera.Direction.BACK);
+            this.allowSelectMultiple = args.optBoolean(12, false);
 
             // If the user specifies a 0 or smaller width/height
             // make it -1 so later comparisons succeed
