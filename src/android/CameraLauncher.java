@@ -126,6 +126,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
     private boolean correctOrientation;     // Should the pictures orientation be corrected
     private boolean orientationCorrected;   // Has the picture's orientation been corrected
     private boolean allowEdit;              // Should we allow the user to crop the image.
+    private boolean allowSelectMultiple;    // Should we allow the user to select multiple images.
 
     public CallbackContext callbackContext;
 
@@ -172,6 +173,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             this.allowEdit = args.getBoolean(7);
             this.correctOrientation = args.getBoolean(8);
             this.saveToPhotoAlbum = args.getBoolean(9);
+            this.allowSelectMultiple = args.getBoolean(10);
 
             // If the user specifies a 0 or smaller width/height
             // make it -1 so later comparisons succeed
@@ -423,6 +425,9 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             title = GET_All;
             intent.setAction(Intent.ACTION_GET_CONTENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
+        }
+        if (this.allowSelectMultiple) {
+            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
         }
 
         if (this.cordova != null) {
@@ -738,6 +743,15 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
      */
     private void processResultFromGallery(int destType, Intent intent) {
         Uri uri = intent.getData();
+        ClipData clipData = intent.getClipData();
+
+        // Handle multiple image selection
+        if (allowSelectMultiple && clipData != null) {
+            processMultipleImagesFromGallery(destType, clipData);
+            return;
+        }
+
+        // Handle single image selection (existing behavior)
         if (uri == null) {
             if (croppedUri != null) {
                 uri = croppedUri;
@@ -869,6 +883,117 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                 ex.printStackTrace();
             }
             this.failPicture(e.getLocalizedMessage());
+        }
+    }
+
+    /**
+     * Processes multiple images selected from the gallery.
+     *
+     * @param destType In which form should we return the images
+     * @param clipData The ClipData containing multiple image URIs
+     */
+    private void processMultipleImagesFromGallery(int destType, ClipData clipData) {
+        try {
+            JSONArray imageArray = new JSONArray();
+
+            for (int i = 0; i < clipData.getItemCount(); i++) {
+                ClipData.Item item = clipData.getItemAt(i);
+                Uri uri = item.getUri();
+
+                if (uri == null) {
+                    continue;
+                }
+
+                String uriString = uri.toString();
+                String mimeTypeOfGalleryFile = FileHelper.getMimeType(uriString, this.cordova);
+                InputStream input;
+                try {
+                    input = cordova.getActivity().getContentResolver().openInputStream(uri);
+                } catch (FileNotFoundException e) {
+                    LOG.d(LOG_TAG, "Unable to open image input stream: " + e.getMessage());
+                    continue;
+                }
+
+                if (input == null) {
+                    LOG.d(LOG_TAG, "Input stream is null for uri: " + uriString);
+                    continue;
+                }
+
+                try {
+                    byte[] data = readData(input);
+
+                    if (this.mediaType == VIDEO || !isImageMimeTypeProcessable(mimeTypeOfGalleryFile)) {
+                        imageArray.put(uriString);
+                    } else {
+                        Bitmap bitmap = null;
+
+                        if (this.targetHeight == -1 && this.targetWidth == -1 &&
+                            destType == FILE_URI && !this.correctOrientation &&
+                            getMimetypeForEncodingType().equalsIgnoreCase(mimeTypeOfGalleryFile)) {
+                            imageArray.put(uriString);
+                        } else {
+                            try {
+                                bitmap = getScaledAndRotatedBitmap(data, mimeTypeOfGalleryFile);
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                                continue;
+                            }
+
+                            if (bitmap == null) {
+                                LOG.d(LOG_TAG, "Unable to create bitmap for uri: " + uriString);
+                                continue;
+                            }
+
+                            if (destType == DATA_URL) {
+                                ByteArrayOutputStream dataStream = new ByteArrayOutputStream();
+                                CompressFormat compressFormat = getCompressFormatForEncodingType(this.encodingType);
+
+                                if (bitmap.compress(compressFormat, this.mQuality, dataStream)) {
+                                    StringBuilder sb = new StringBuilder()
+                                        .append("data:")
+                                        .append(this.encodingType == PNG ? PNG_MIME_TYPE : JPEG_MIME_TYPE)
+                                        .append(";base64,");
+                                    byte[] code = dataStream.toByteArray();
+                                    byte[] output = Base64.encode(code, Base64.NO_WRAP);
+                                    sb.append(new String(output));
+                                    imageArray.put(sb.toString());
+                                }
+                            } else if (destType == FILE_URI) {
+                                if ((this.targetHeight > 0 && this.targetWidth > 0) ||
+                                    (this.correctOrientation && this.orientationCorrected) ||
+                                    !mimeTypeOfGalleryFile.equalsIgnoreCase(getMimetypeForEncodingType())) {
+                                    String modifiedPath = this.outputModifiedBitmap(bitmap, uri, mimeTypeOfGalleryFile);
+                                    imageArray.put("file://" + modifiedPath + "?" + System.currentTimeMillis());
+                                } else {
+                                    imageArray.put(uriString);
+                                }
+                            }
+
+                            if (bitmap != null) {
+                                bitmap.recycle();
+                            }
+                        }
+                    }
+
+                    input.close();
+                } catch (Exception e) {
+                    try {
+                        input.close();
+                    } catch (IOException ex) {
+                        ex.printStackTrace();
+                    }
+                    LOG.d(LOG_TAG, "Error processing image: " + e.getMessage());
+                }
+            }
+
+            if (imageArray.length() == 0) {
+                this.failPicture("Unable to process any images");
+                return;
+            }
+
+            this.callbackContext.success(imageArray);
+        } catch (Exception e) {
+            this.failPicture("Error processing multiple images: " + e.getMessage());
         }
     }
 

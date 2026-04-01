@@ -80,6 +80,7 @@ typedef NSUInteger CDVMediaType;
 */
 @property (assign) BOOL usesGeolocation;
 @property (assign) BOOL cropToSize;
+@property (assign) BOOL allowSelectMultiple;
 
 + (instancetype) createFromTakePictureArguments:(CDVInvokedUrlCommand*)command;
 
@@ -140,6 +141,10 @@ typedef NSUInteger CDVMediaType;
 - (void)processPHPickerImage:(UIImage*)image metadata:(NSDictionary*)metadata callbackId:(NSString*)callbackId options:(CDVPictureOptions*)options API_AVAILABLE(ios(14));
 // PHPickerViewControllerDelegate method
 - (void)picker:(PHPickerViewController *)picker didFinishPicking:(NSArray<PHPickerResult *> *)results API_AVAILABLE(ios(14));
+// Multiple image selection methods
+- (void)processMultiplePHPickerImages:(NSArray<PHPickerResult*>*)results callbackId:(NSString*)callbackId options:(CDVPictureOptions*)options API_AVAILABLE(ios(14));
+- (void)processNextImage:(NSArray<PHPickerResult*>*)results atIndex:(NSUInteger)index resultsArray:(NSMutableArray*)resultsArray callbackId:(NSString*)callbackId options:(CDVPictureOptions*)options API_AVAILABLE(ios(14));
+- (void)processPHPickerImageForArray:(UIImage*)image metadata:(NSDictionary*)metadata resultsArray:(NSMutableArray*)resultsArray callbackId:(NSString*)callbackId options:(CDVPictureOptions*)options results:(NSArray<PHPickerResult*>*)results atIndex:(NSUInteger)index API_AVAILABLE(ios(14));
 #endif
 
 @end

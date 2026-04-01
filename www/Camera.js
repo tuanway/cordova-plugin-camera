@@ -70,6 +70,7 @@ for (const key in Camera) {
  * @property {Boolean} [correctOrientation] - Rotate the image to correct for the orientation of the device during capture.
  * @property {Boolean} [saveToPhotoAlbum] - Save the image to the photo album on the device after capture.
  * @property {module:Camera.Direction} [cameraDirection=BACK] - Choose the camera to use (front- or back-facing).
+ * @property {Boolean} [allowSelectMultiple=false] - Allow selection of multiple images from the gallery. Only works when `PictureSourceType` is `PHOTOLIBRARY` or `SAVEDPHOTOALBUM`.
  */
 
 /**
@@ -135,6 +136,7 @@ cameraExport.getPicture = function (successCallback, errorCallback, options) {
     const allowEdit = !!options.allowEdit;
     const correctOrientation = !!options.correctOrientation;
     const saveToPhotoAlbum = !!options.saveToPhotoAlbum;
+    const allowSelectMultiple = !!options.allowSelectMultiple;
     const cameraDirection = getValue(options.cameraDirection, Camera.Direction.BACK);
 
     if (allowEdit) {
@@ -142,7 +144,7 @@ cameraExport.getPicture = function (successCallback, errorCallback, options) {
     }
 
     const args = [quality, destinationType, sourceType, targetWidth, targetHeight, encodingType,
-        mediaType, allowEdit, correctOrientation, saveToPhotoAlbum, cameraDirection];
+        mediaType, allowEdit, correctOrientation, saveToPhotoAlbum, cameraDirection, allowSelectMultiple];
 
     exec(successCallback, errorCallback, 'Camera', 'takePicture', args);
 };
