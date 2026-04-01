@@ -83,9 +83,9 @@ static NSString* MIME_JPEG    = @"image/jpeg";
     pictureOptions.correctOrientation = [[command argumentAtIndex:8 withDefault:@(NO)] boolValue];
     pictureOptions.saveToPhotoAlbum = [[command argumentAtIndex:9 withDefault:@(NO)] boolValue];
     pictureOptions.cameraDirection = [[command argumentAtIndex:10 withDefault:@(UIImagePickerControllerCameraDeviceRear)] unsignedIntegerValue];
+    pictureOptions.allowSelectMultiple = [[command argumentAtIndex:11 withDefault:@(NO)] boolValue];
 
     pictureOptions.usesGeolocation = NO;
-    pictureOptions.allowSelectMultiple = NO;
 
     return pictureOptions;
 }

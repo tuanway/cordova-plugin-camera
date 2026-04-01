@@ -174,7 +174,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             this.allowEdit = args.getBoolean(7);
             this.correctOrientation = args.getBoolean(8);
             this.saveToPhotoAlbum = args.getBoolean(9);
-            this.allowSelectMultiple = args.getBoolean(10);
+            this.allowSelectMultiple = args.length() > 10 ? args.getBoolean(10) : false;
 
             // If the user specifies a 0 or smaller width/height
             // make it -1 so later comparisons succeed
@@ -391,9 +391,13 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
         String title = GET_PICTURE;
         croppedUri = null;
         croppedFilePath = null;
+        LOG.d(LOG_TAG, "getImage called with srcType=" + srcType + ", returnType=" + returnType +
+              ", allowSelectMultiple=" + this.allowSelectMultiple + ", mediaType=" + this.mediaType);
+
         if (this.mediaType == PICTURE) {
             intent.setType("image/*");
-            if (this.allowEdit) {
+            if (this.allowEdit && !this.allowSelectMultiple) {
+                // Crop only works for single image selection
                 intent.setAction(Intent.ACTION_PICK);
                 intent.putExtra("crop", "true");
                 if (targetWidth > 0) {
@@ -429,16 +433,23 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
         }
         if (this.allowSelectMultiple) {
             intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+            LOG.d(LOG_TAG, "EXTRA_ALLOW_MULTIPLE set to true");
         }
 
         if (this.cordova != null) {
-            this.cordova.startActivityForResult(
-                (CordovaPlugin) this,
-                Intent.createChooser(
-                    intent,
-                    new String(title)),
-                    // Requestcode
-                    (srcType + 1) * 16 + returnType + 1);
+            try {
+                this.cordova.startActivityForResult(
+                    (CordovaPlugin) this,
+                    Intent.createChooser(
+                        intent,
+                        new String(title)),
+                        // Requestcode
+                        (srcType + 1) * 16 + returnType + 1);
+                LOG.d(LOG_TAG, "startActivityForResult called successfully");
+            } catch (Exception e) {
+                LOG.e(LOG_TAG, "Exception in startActivityForResult: " + e.getMessage(), e);
+                this.failPicture("Error starting gallery: " + e.getMessage());
+            }
         }
     }
 
@@ -896,17 +907,20 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
     private void processMultipleImagesFromGallery(int destType, ClipData clipData) {
         try {
             JSONArray imageArray = new JSONArray();
+            LOG.d(LOG_TAG, "Processing " + clipData.getItemCount() + " images, destType=" + destType);
 
             for (int i = 0; i < clipData.getItemCount(); i++) {
                 ClipData.Item item = clipData.getItemAt(i);
                 Uri uri = item.getUri();
 
                 if (uri == null) {
+                    LOG.d(LOG_TAG, "Skipping null URI at index " + i);
                     continue;
                 }
 
                 String uriString = uri.toString();
                 String mimeTypeOfGalleryFile = FileHelper.getMimeType(uriString, this.cordova);
+                LOG.d(LOG_TAG, "Processing image " + i + ": " + uriString + " (mime: " + mimeTypeOfGalleryFile + ")");
                 InputStream input;
                 try {
                     input = cordova.getActivity().getContentResolver().openInputStream(uri);
@@ -925,6 +939,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
 
                     if (this.mediaType == VIDEO || !isImageMimeTypeProcessable(mimeTypeOfGalleryFile)) {
                         imageArray.put(uriString);
+                        LOG.d(LOG_TAG, "Added video/unprocessable image to array: " + uriString);
                     } else {
                         Bitmap bitmap = null;
 
@@ -932,6 +947,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                             destType == FILE_URI && !this.correctOrientation &&
                             getMimetypeForEncodingType().equalsIgnoreCase(mimeTypeOfGalleryFile)) {
                             imageArray.put(uriString);
+                            LOG.d(LOG_TAG, "Added original URI to array: " + uriString);
                         } else {
                             try {
                                 bitmap = getScaledAndRotatedBitmap(data, mimeTypeOfGalleryFile);
@@ -958,15 +974,19 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                                     byte[] output = Base64.encode(code, Base64.NO_WRAP);
                                     sb.append(new String(output));
                                     imageArray.put(sb.toString());
+                                    LOG.d(LOG_TAG, "Added base64 data URI to array (length: " + sb.length() + ")");
                                 }
                             } else if (destType == FILE_URI) {
                                 if ((this.targetHeight > 0 && this.targetWidth > 0) ||
                                     (this.correctOrientation && this.orientationCorrected) ||
                                     !mimeTypeOfGalleryFile.equalsIgnoreCase(getMimetypeForEncodingType())) {
                                     String modifiedPath = this.outputModifiedBitmap(bitmap, uri, mimeTypeOfGalleryFile);
-                                    imageArray.put("file://" + modifiedPath + "?" + System.currentTimeMillis());
+                                    String fileUri = "file://" + modifiedPath + "?" + System.currentTimeMillis();
+                                    imageArray.put(fileUri);
+                                    LOG.d(LOG_TAG, "Added modified file URI to array: " + fileUri);
                                 } else {
                                     imageArray.put(uriString);
+                                    LOG.d(LOG_TAG, "Added original URI to array: " + uriString);
                                 }
                             }
 
@@ -992,8 +1012,10 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                 return;
             }
 
+            LOG.d(LOG_TAG, "Sending result array with " + imageArray.length() + " items");
             this.callbackContext.success(imageArray);
         } catch (Exception e) {
+            LOG.e(LOG_TAG, "Exception in processMultipleImagesFromGallery: " + e.getMessage(), e);
             this.failPicture("Error processing multiple images: " + e.getMessage());
         }
     }
