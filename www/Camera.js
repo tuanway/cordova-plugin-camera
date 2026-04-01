@@ -146,6 +146,10 @@ cameraExport.getPicture = function (successCallback, errorCallback, options) {
     const args = [quality, destinationType, sourceType, targetWidth, targetHeight, encodingType,
         mediaType, allowEdit, correctOrientation, saveToPhotoAlbum, cameraDirection, allowSelectMultiple];
 
+    console.log('Camera.getPicture: Calling exec with args:', JSON.stringify(args));
+    console.log('Camera.getPicture: allowSelectMultiple =', allowSelectMultiple);
+    console.log('Camera.getPicture: args.length =', args.length);
+
     exec(successCallback, errorCallback, 'Camera', 'takePicture', args);
 };
 
