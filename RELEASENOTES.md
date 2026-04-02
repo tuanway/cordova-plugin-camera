@@ -20,12 +20,6 @@
 -->
 # Release Notes
 
-### 8.0.3 (Apr 2, 2026)
-
-**Fixes**:
-
-* fix(android): use the document picker contract for gallery multi-select and isolate per-image processing state during multi-select result handling
-
 ### 8.0.0 (Oct 30, 2024)
 
 **Breaking Changes:**
@@ -39,6 +33,7 @@
 
 **Fixes**:
 
+* fix(android): restore gallery multi-select by using the document picker contract and isolating per-image processing state
 * [GH-901](https://github.com/apache/cordova-plugin-camera/pull/901) fix(android): Isolate provider access to a subdirectory (#901)
 * [GH-915](https://github.com/apache/cordova-plugin-camera/pull/903) fix(android): Improper serialization of image uri in save instance state (#903)
 * [GH-904](https://github.com/apache/cordova-plugin-camera/pull/904) fix(android): Use VERSION_CODES instead of hard-coded API literals (#904)
