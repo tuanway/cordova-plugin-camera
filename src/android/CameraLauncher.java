@@ -787,7 +787,13 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             // If you ask for video or the selected file cannot be processed
             // there will be no attempt to resize any returned data.
             if (this.mediaType == VIDEO || !isImageMimeTypeProcessable(mimeTypeOfGalleryFile)) {
-                this.callbackContext.success(uriString);
+                if (this.allowSelectMultiple) {
+                    JSONArray imageArray = new JSONArray();
+                    imageArray.put(uriString);
+                    this.callbackContext.success(imageArray);
+                } else {
+                    this.callbackContext.success(uriString);
+                }
             } else {
                 Bitmap bitmap = null;
 
@@ -796,7 +802,13 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                 if (this.targetHeight == -1 && this.targetWidth == -1 &&
                     destType == FILE_URI && !this.correctOrientation &&
                     getMimetypeForEncodingType().equalsIgnoreCase(mimeTypeOfGalleryFile)) {
-                    this.callbackContext.success(uriString);
+                    if (this.allowSelectMultiple) {
+                        JSONArray imageArray = new JSONArray();
+                        imageArray.put(uriString);
+                        this.callbackContext.success(imageArray);
+                    } else {
+                        this.callbackContext.success(uriString);
+                    }
                 } else {
                     try {
                         bitmap = getScaledAndRotatedBitmap(data, mimeTypeOfGalleryFile);
@@ -811,7 +823,20 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
 
                     // If sending base64 image back
                     if (destType == DATA_URL) {
-                        this.processPicture(bitmap, this.encodingType);
+                        ByteArrayOutputStream dataStream = new ByteArrayOutputStream();
+                        CompressFormat compressFormat = getCompressFormatForEncodingType(this.encodingType);
+                        bitmap.compress(compressFormat, this.mQuality, dataStream);
+                        byte[] code = dataStream.toByteArray();
+                        byte[] output = Base64.encode(code, Base64.NO_WRAP);
+                        String base64String = "data:" + (this.encodingType == PNG ? PNG_MIME_TYPE : JPEG_MIME_TYPE) + ";base64," + new String(output);
+
+                        if (this.allowSelectMultiple) {
+                            JSONArray imageArray = new JSONArray();
+                            imageArray.put(base64String);
+                            this.callbackContext.success(imageArray);
+                        } else {
+                            this.callbackContext.success(base64String);
+                        }
                     }
 
                     // If sending filename back
@@ -824,14 +849,26 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                                 String modifiedPath = this.outputModifiedBitmap(bitmap, uri, mimeTypeOfGalleryFile);
                                 // The modified image is cached by the app in order to get around this and not have to delete you
                                 // application cache I'm adding the current system time to the end of the file url.
-                                this.callbackContext.success("file://" + modifiedPath + "?" + System.currentTimeMillis());
+                                if (this.allowSelectMultiple) {
+                                    JSONArray imageArray = new JSONArray();
+                                    imageArray.put("file://" + modifiedPath + "?" + System.currentTimeMillis());
+                                    this.callbackContext.success(imageArray);
+                                } else {
+                                    this.callbackContext.success("file://" + modifiedPath + "?" + System.currentTimeMillis());
+                                }
 
                             } catch (Exception e) {
                                 e.printStackTrace();
                                 this.failPicture("Error retrieving image: " + e.getLocalizedMessage());
                             }
                         } else {
-                            this.callbackContext.success(uriString);
+                            if (this.allowSelectMultiple) {
+                                JSONArray imageArray = new JSONArray();
+                                imageArray.put(uriString);
+                                this.callbackContext.success(imageArray);
+                            } else {
+                                this.callbackContext.success(uriString);
+                            }
                         }
                     }
                     if (bitmap != null) {
@@ -840,45 +877,6 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                     }
                     System.gc();
                 }
-                if (bitmap == null) {
-                    LOG.d(LOG_TAG, "I either have an unreadable uri or null bitmap");
-                    this.failPicture("Unable to create bitmap!");
-                    return;
-                }
-
-                // If sending base64 image back
-                if (destType == DATA_URL) {
-                    this.processPicture(bitmap, this.encodingType);
-                }
-
-                // If sending filename back
-                else if (destType == FILE_URI) {
-                    // Did we modify the image?
-                    if ( (this.targetHeight > 0 && this.targetWidth > 0) ||
-                            (this.correctOrientation && this.orientationCorrected) ||
-                            !mimeTypeOfGalleryFile.equalsIgnoreCase(getMimetypeForEncodingType()))
-                    {
-                        try {
-                            String modifiedPath = this.outputModifiedBitmap(bitmap, uri, mimeTypeOfGalleryFile);
-                            // The modified image is cached by the app in order to get around this and not have to delete you
-                            // application cache I'm adding the current system time to the end of the file url.
-                            this.callbackContext.success("file://" + modifiedPath + "?" + System.currentTimeMillis());
-
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                            this.failPicture("Error retrieving image: "+e.getLocalizedMessage());
-                        }
-                    } else {
-                        this.callbackContext.success(uriString);
-                    }
-                }
-                if (bitmap != null) {
-                    bitmap.recycle();
-                    bitmap = null;
-                }
-                System.gc();
-            }
-
             input.close();
         }
         catch (Exception e) {

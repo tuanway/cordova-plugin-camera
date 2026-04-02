@@ -271,11 +271,11 @@ Callback function that provides an error message.
 ### camera.onSuccess : <code>function</code>
 Callback function that provides the image data.
 
-**Kind**: static typedef of <code>[camera](#module_camera)</code>  
+**Kind**: static typedef of <code>[camera](#module_camera)</code>
 
 | Param | Type | Description |
 | --- | --- | --- |
-| imageData | <code>string</code> | Data URI, _or_ the image file URI, depending on [`cameraOptions`](#module_camera.CameraOptions) in effect. |
+| imageData | <code>string</code> \| <code>Array.&lt;string&gt;</code> | Data URI, _or_ the image file URI, depending on [`cameraOptions`](#module_camera.CameraOptions) in effect. When `allowSelectMultiple` is true, an array of URIs is returned. |
 
 **Example**  
 ```js
@@ -316,6 +316,7 @@ Optional parameters to customize the camera settings.
 | saveToPhotoAlbum | <code>Boolean</code> |  | Save the image to the photo album on the device after capture.<br />See [Android Quirks](#cameragetpicturesuccesscallback-errorcallback-options). |
 | popoverOptions | <code>[CameraPopoverOptions](#module_CameraPopoverOptions)</code> |  | iOS-only options that specify popover location in iPad. |
 | cameraDirection | <code>[Direction](#module_Camera.Direction)</code> | <code>BACK</code> | Choose the camera to use (front- or back-facing). |
+| allowSelectMultiple | <code>Boolean</code> | <code>false</code> | Allow selection of multiple images from the gallery. Only works when `sourceType` is `PHOTOLIBRARY` or `SAVEDPHOTOALBUM`. |
 
 ---
 

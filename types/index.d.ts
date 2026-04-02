@@ -29,11 +29,12 @@ interface Camera {
      * Takes a photo using the camera, or retrieves a photo from the device's image gallery.
      * @param cameraSuccess Success callback, that get the image
      * as a base64-encoded String, or as the URI for the image file.
+     * When allowSelectMultiple is true, the success callback receives an array of strings.
      * @param cameraError Error callback, that get an error message.
      * @param cameraOptions Optional parameters to customize the camera settings.
      */
     getPicture(
-        cameraSuccess: (data: string) => void,
+        cameraSuccess: (data: string | string[]) => void,
         cameraError: (message: string) => void,
         cameraOptions?: CameraOptions): void;
     // Next will work only on iOS
@@ -102,6 +103,8 @@ interface CameraOptions {
     cameraDirection?: number;
     /** iOS-only options that specify popover location in iPad. Defined in CameraPopoverOptions. */
     popoverOptions?: CameraPopoverOptions;
+    /** Allow selection of multiple images from the gallery. Default is false. */
+    allowSelectMultiple?: boolean;
 }
 
 /**

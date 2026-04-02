@@ -185,6 +185,16 @@ static NSString* MIME_JPEG    = @"image/jpeg";
                  }
              }];
         } else {
+            // On iOS 14+, PHPickerViewController handles its own permissions,
+            // so we only need to check permissions for older iOS or when using UIImagePickerController
+            if (@available(iOS 14, *)) {
+                if (pictureOptions.sourceType == UIImagePickerControllerSourceTypePhotoLibrary ||
+                    pictureOptions.sourceType == UIImagePickerControllerSourceTypeSavedPhotosAlbum) {
+                    // PHPicker will handle its own permission UI, proceed directly
+                    [weakSelf showCameraPicker:command.callbackId withOptions:pictureOptions];
+                    return;
+                }
+            }
             [weakSelf options:pictureOptions requestPhotoPermissions:^(BOOL granted) {
                 if (!granted) {
                     // Denied; show an alert
@@ -887,25 +897,43 @@ static NSString* MIME_JPEG    = @"image/jpeg";
     else{
         PHAuthorizationStatus status = [PHPhotoLibrary authorizationStatus];
 
-        switch (status) {
-            case PHAuthorizationStatusAuthorized:
+        // Check for authorized status (works on all iOS versions)
+        if (status == PHAuthorizationStatusAuthorized) {
+            completion(YES);
+            return;
+        }
+
+        // Check for limited access status (iOS 14+ only)
+        // Using integer comparison to avoid compilation errors on pre-iOS 14 SDKs
+        // PHAuthorizationStatus enum: 0=NotDetermined, 1=Restricted, 2=Denied, 3=Authorized, 4=Limited
+        if (@available(iOS 14.0, *)) {
+            if ((NSInteger)status == 4) {  // PHAuthorizationStatusLimited
                 completion(YES);
-                break;
-            case PHAuthorizationStatusNotDetermined: {
-                [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus authorizationStatus) {
-                    if (authorizationStatus == PHAuthorizationStatusAuthorized) {
+                return;
+            }
+        }
+
+        // For NotDetermined status, request authorization
+        if (status == PHAuthorizationStatusNotDetermined) {
+            [PHPhotoLibrary requestAuthorization:^(PHAuthorizationStatus authorizationStatus) {
+                if (authorizationStatus == PHAuthorizationStatusAuthorized) {
+                    completion(YES);
+                } else if (@available(iOS 14.0, *)) {
+                    // Check for limited access status (value 4)
+                    if ((NSInteger)authorizationStatus == 4) {  // PHAuthorizationStatusLimited
                         completion(YES);
                     } else {
                         completion(NO);
                     }
-                }];
-                break;
-            }
-            default:
-                completion(NO);
-                break;
+                } else {
+                    completion(NO);
+                }
+            }];
+            return;
         }
 
+        // All other cases (denied, restricted, limited on pre-iOS 14)
+        completion(NO);
     }
 
 }
@@ -988,7 +1016,7 @@ static NSString* MIME_JPEG    = @"image/jpeg";
                     }
 
                     NSError* err = nil;
-                    NSString* extension = self.pickerController.pictureOptions.encodingType == EncodingTypePNG ? @"png":@"jpg";
+                    NSString* extension = options.encodingType == EncodingTypePNG ? @"png":@"jpg";
                     NSString* filePath = [self tempFilePath:extension];
 
                     // save file

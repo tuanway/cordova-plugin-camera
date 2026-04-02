@@ -41,15 +41,15 @@ function takePicture (success, error, opts) {
         input.onchange = function (inputEvent) {
             const files = inputEvent.target.files;
 
-            // Handle multiple file selection
-            if (allowSelectMultiple && files.length > 1) {
-                const imageArray = [];
+            // Handle multiple file selection or single file with allowSelectMultiple enabled
+            if (allowSelectMultiple && files.length > 0) {
+                const imageArray = new Array(files.length);
                 let completed = 0;
 
                 for (let i = 0; i < files.length; i++) {
                     const reader = new FileReader();
                     reader.onload = function (readerEvent) {
-                        imageArray.push(readerEvent.target.result);
+                        imageArray[i] = readerEvent.target.result;
                         completed++;
 
                         // When all files are processed, return the array
