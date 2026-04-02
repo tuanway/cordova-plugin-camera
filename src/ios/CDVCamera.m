@@ -28,6 +28,7 @@
 #import <ImageIO/CGImageProperties.h>
 #import <ImageIO/CGImageDestination.h>
 #import <MobileCoreServices/UTCoreTypes.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import <objc/message.h>
 #import <Photos/Photos.h>
 #import <PhotosUI/PhotosUI.h>
@@ -100,6 +101,8 @@ static NSString* MIME_JPEG    = @"image/jpeg";
 @interface CDVCamera ()
 
 @property (readwrite, assign) BOOL hasPendingOperation;
+
+- (NSString*)copyFileToTemp:(NSString*)filePath;
 
 @end
 
@@ -205,7 +208,7 @@ static NSString* MIME_JPEG    = @"image/jpeg";
                             [weakSelf sendNoPermissionResult:command.callbackId];
                         }]];
                         [alertController addAction:[UIAlertAction actionWithTitle:NSLocalizedString(@"Settings", nil) style:UIAlertActionStyleDefault handler:^(UIAlertAction * _Nonnull action) {
-                            [[UIApplication sharedApplication] openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString]];
+                            [[UIApplication sharedApplication] openURL:[NSURL URLWithString:UIApplicationOpenSettingsURLString] options:@{} completionHandler:nil];
                             [weakSelf sendNoPermissionResult:command.callbackId];
                         }]];
                         [weakSelf.viewController presentViewController:alertController animated:YES completion:nil];
@@ -478,8 +481,6 @@ static NSString* MIME_JPEG    = @"image/jpeg";
                            callbackId:(NSString*)callbackId
                               options:(CDVPictureOptions*)options API_AVAILABLE(ios(14))
 {
-    __weak CDVCamera* weakSelf = self;
-
     // Create a mutable array to store the results
     NSMutableArray* resultsArray = [NSMutableArray arrayWithCapacity:results.count];
 
@@ -606,7 +607,7 @@ static NSString* MIME_JPEG    = @"image/jpeg";
     __weak CDVCamera* weakSelf = self;
 
     [self resultForImage:options info:info completion:^(CDVPluginResult* pluginResult) {
-        if (pluginResult.status == CDVCommandStatus_OK) {
+        if ([pluginResult.status intValue] == CDVCommandStatus_OK) {
             [resultsArray addObject:pluginResult.message];
         }
 
@@ -1071,6 +1072,19 @@ static NSString* MIME_JPEG    = @"image/jpeg";
     NSError *error;
     [fileMgr copyItemAtPath:moviePath toPath:copyMoviePath error:&error];
     return [[NSURL fileURLWithPath:copyMoviePath] absoluteString];
+}
+
+- (NSString*)copyFileToTemp:(NSString*)filePath {
+    NSString* fileExtension = [filePath pathExtension];
+    NSString* tempPath = [self tempFilePath:fileExtension];
+    NSFileManager* fileMgr = [[NSFileManager alloc] init];
+    NSError *error;
+    [fileMgr copyItemAtPath:filePath toPath:tempPath error:&error];
+    if (error) {
+        NSLog(@"CDVCamera: Failed to copy file to temp: %@", [error localizedDescription]);
+        return nil;
+    }
+    return tempPath;
 }
 
 - (void)imagePickerController:(UIImagePickerController*)picker didFinishPickingMediaWithInfo:(NSDictionary*)info
