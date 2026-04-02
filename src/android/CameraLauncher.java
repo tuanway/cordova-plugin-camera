@@ -393,11 +393,20 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
     public void getImage(int srcType, int returnType) {
         Intent intent = new Intent();
         String title = GET_PICTURE;
+        final boolean usePhotoPicker = this.allowSelectMultiple
+                && this.mediaType == PICTURE
+                && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU;
         final boolean useOpenDocument = this.allowSelectMultiple && Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT;
         croppedUri = null;
         croppedFilePath = null;
         if (this.mediaType == PICTURE) {
-            intent.setType("image/*");
+            if (usePhotoPicker) {
+                intent = new Intent(MediaStore.ACTION_PICK_IMAGES);
+                intent.setType("image/*");
+                intent.putExtra(MediaStore.EXTRA_PICK_IMAGES_MAX, MediaStore.getPickImagesMaxLimit());
+            } else {
+                intent.setType("image/*");
+            }
             if (this.allowEdit && !this.allowSelectMultiple) {
                 intent.setAction(Intent.ACTION_PICK);
                 intent.putExtra("crop", "true");
@@ -419,8 +428,10 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                 if (this.allowEdit) {
                     LOG.w(LOG_TAG, "allowEdit is ignored when allowSelectMultiple is enabled");
                 }
-                intent.setAction(useOpenDocument ? Intent.ACTION_OPEN_DOCUMENT : Intent.ACTION_GET_CONTENT);
-                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                if (!usePhotoPicker) {
+                    intent.setAction(useOpenDocument ? Intent.ACTION_OPEN_DOCUMENT : Intent.ACTION_GET_CONTENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                }
             }
         } else if (this.mediaType == VIDEO) {
             intent.setType("video/*");
@@ -436,12 +447,17 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             intent.addCategory(Intent.CATEGORY_OPENABLE);
         }
         if (this.allowSelectMultiple) {
-            intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
-            Intent chooser = Intent.createChooser(intent, title);
-            chooser.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
             if (this.cordova != null) {
-                this.cordova.startActivityForResult((CordovaPlugin) this, chooser,
-                        (srcType + 1) * 16 + returnType + 1);
+                if (usePhotoPicker) {
+                    this.cordova.startActivityForResult((CordovaPlugin) this, intent,
+                            (srcType + 1) * 16 + returnType + 1);
+                } else {
+                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                    Intent chooser = Intent.createChooser(intent, title);
+                    chooser.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);
+                    this.cordova.startActivityForResult((CordovaPlugin) this, chooser,
+                            (srcType + 1) * 16 + returnType + 1);
+                }
             }
         } else {
             if (this.cordova != null) {
