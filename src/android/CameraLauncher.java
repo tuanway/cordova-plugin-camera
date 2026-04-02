@@ -877,6 +877,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                     }
                     System.gc();
                 }
+            }
             input.close();
         }
         catch (Exception e) {
