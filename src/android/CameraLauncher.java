@@ -396,7 +396,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
         croppedFilePath = null;
         if (this.mediaType == PICTURE) {
             intent.setType("image/*");
-            if (this.allowEdit) {
+            if (this.allowEdit && !this.allowSelectMultiple) {
                 intent.setAction(Intent.ACTION_PICK);
                 intent.putExtra("crop", "true");
                 if (targetWidth > 0) {
@@ -414,6 +414,9 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                 croppedUri = Uri.fromFile(croppedFile);
                 intent.putExtra(MediaStore.EXTRA_OUTPUT, croppedUri);
             } else {
+                if (this.allowEdit) {
+                    LOG.w(LOG_TAG, "allowEdit is ignored when allowSelectMultiple is enabled");
+                }
                 intent.setAction(Intent.ACTION_GET_CONTENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
             }
