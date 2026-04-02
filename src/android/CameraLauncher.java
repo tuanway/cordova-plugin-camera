@@ -129,7 +129,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
     private boolean allowEdit;              // Should we allow the user to crop the image.
     private boolean allowSelectMultiple;    // Should we allow the user to select multiple images.
     private JSONObject popoverOptions;      // iOS-only popover options
-    private int cameraDirection;            // Camera direction (front/back)
+    private int cameraDirection;            // Camera direction (0 = back, 1 = front)
 
     public CallbackContext callbackContext;
 
@@ -177,7 +177,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             this.correctOrientation = args.getBoolean(8);
             this.saveToPhotoAlbum = args.getBoolean(9);
             this.popoverOptions = args.optJSONObject(10);
-            this.cameraDirection = args.optInt(11, Camera.Direction.BACK);
+            this.cameraDirection = args.optInt(11, 0);  // 0 = back camera, 1 = front camera
             this.allowSelectMultiple = args.optBoolean(12, false);
 
             // If the user specifies a 0 or smaller width/height
