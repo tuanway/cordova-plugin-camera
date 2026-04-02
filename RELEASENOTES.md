@@ -20,6 +20,12 @@
 -->
 # Release Notes
 
+### 8.0.3 (Apr 2, 2026)
+
+**Fixes**:
+
+* fix(android): use the document picker contract for gallery multi-select and isolate per-image processing state during multi-select result handling
+
 ### 8.0.0 (Oct 30, 2024)
 
 **Breaking Changes:**

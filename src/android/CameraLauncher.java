@@ -175,6 +175,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             this.mediaType = args.getInt(6);
             this.allowEdit = args.getBoolean(7);
             this.correctOrientation = args.getBoolean(8);
+            this.orientationCorrected = false;
             this.saveToPhotoAlbum = args.getBoolean(9);
             this.popoverOptions = args.optJSONObject(10);
             this.cameraDirection = args.optInt(11, 0);  // 0 = back camera, 1 = front camera
@@ -392,6 +393,7 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
     public void getImage(int srcType, int returnType) {
         Intent intent = new Intent();
         String title = GET_PICTURE;
+        final boolean useOpenDocument = this.allowSelectMultiple && Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT;
         croppedUri = null;
         croppedFilePath = null;
         if (this.mediaType == PICTURE) {
@@ -417,20 +419,20 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                 if (this.allowEdit) {
                     LOG.w(LOG_TAG, "allowEdit is ignored when allowSelectMultiple is enabled");
                 }
-                intent.setAction(Intent.ACTION_GET_CONTENT);
+                intent.setAction(useOpenDocument ? Intent.ACTION_OPEN_DOCUMENT : Intent.ACTION_GET_CONTENT);
                 intent.addCategory(Intent.CATEGORY_OPENABLE);
             }
         } else if (this.mediaType == VIDEO) {
             intent.setType("video/*");
             title = GET_VIDEO;
-            intent.setAction(Intent.ACTION_GET_CONTENT);
+            intent.setAction(useOpenDocument ? Intent.ACTION_OPEN_DOCUMENT : Intent.ACTION_GET_CONTENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
         } else if (this.mediaType == ALLMEDIA) {
             // I wanted to make the type 'image/*, video/*' but this does not work on all versions
             // of android so I had to go with the wildcard search.
             intent.setType("*/*");
             title = GET_All;
-            intent.setAction(Intent.ACTION_GET_CONTENT);
+            intent.setAction(useOpenDocument ? Intent.ACTION_OPEN_DOCUMENT : Intent.ACTION_GET_CONTENT);
             intent.addCategory(Intent.CATEGORY_OPENABLE);
         }
         if (this.allowSelectMultiple) {
@@ -919,6 +921,8 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
             for (int i = 0; i < clipData.getItemCount(); i++) {
                 ClipData.Item item = clipData.getItemAt(i);
                 Uri uri = item.getUri();
+                final int originalTargetWidth = this.targetWidth;
+                final int originalTargetHeight = this.targetHeight;
 
                 if (uri == null) {
                     LOG.d(LOG_TAG, "Skipping null URI at index " + i);
@@ -956,11 +960,18 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                             imageArray.put(uriString);
                             LOG.d(LOG_TAG, "Added original URI to array: " + uriString);
                         } else {
+                            boolean imageOrientationCorrected = false;
                             try {
+                                this.orientationCorrected = false;
                                 bitmap = getScaledAndRotatedBitmap(data, mimeTypeOfGalleryFile);
+                                imageOrientationCorrected = this.orientationCorrected;
                             } catch (IOException e) {
                                 e.printStackTrace();
                                 continue;
+                            } finally {
+                                this.targetWidth = originalTargetWidth;
+                                this.targetHeight = originalTargetHeight;
+                                this.orientationCorrected = false;
                             }
 
                             if (bitmap == null) {
@@ -984,8 +995,8 @@ public class CameraLauncher extends CordovaPlugin implements MediaScannerConnect
                                     LOG.d(LOG_TAG, "Added base64 data URI to array (length: " + sb.length() + ")");
                                 }
                             } else if (destType == FILE_URI) {
-                                if ((this.targetHeight > 0 && this.targetWidth > 0) ||
-                                    (this.correctOrientation && this.orientationCorrected) ||
+                                if ((originalTargetHeight > 0 && originalTargetWidth > 0) ||
+                                    (this.correctOrientation && imageOrientationCorrected) ||
                                     !mimeTypeOfGalleryFile.equalsIgnoreCase(getMimetypeForEncodingType())) {
                                     String modifiedPath = this.outputModifiedBitmap(bitmap, uri, mimeTypeOfGalleryFile);
                                     String fileUri = "file://" + modifiedPath + "?" + System.currentTimeMillis();
