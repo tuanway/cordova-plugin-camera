@@ -83,8 +83,7 @@ typedef NSUInteger CDVMediaType;
 @interface CDVCamera : CDVPlugin <UIImagePickerControllerDelegate,
                        UINavigationControllerDelegate,
                        UIPopoverControllerDelegate,
-                       CLLocationManagerDelegate,
-                       PHPickerViewControllerDelegate>
+                       CLLocationManagerDelegate>
 {}
 
 @property (strong) CDVCameraPicker* pickerController;

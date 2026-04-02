@@ -340,7 +340,7 @@ static NSString* MIME_JPEG    = @"image/jpeg";
     });
 }
 
-// PHPickerViewControllerDelegate method
+// PHPickerViewControllerDelegate method (implementing without formal protocol conformance)
 - (void)picker:(PHPickerViewController*)picker didFinishPicking:(NSArray<PHPickerResult*>*)results API_AVAILABLE(ios(14))
 {
     NSString *callbackId = objc_getAssociatedObject(picker, "callbackId");
